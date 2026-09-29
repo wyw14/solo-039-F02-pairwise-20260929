@@ -4,8 +4,15 @@ import (
 	"context"
 	"errors"
 	"github.com/wyw14/solo-039/internal/model"
+	"sort"
 	"sync"
 )
+
+type PendingCommand struct {
+	Equipment string
+	Action    string
+	Command   model.Command
+}
 
 type CommandBook struct {
 	mu               sync.Mutex
@@ -51,6 +58,23 @@ func (b *CommandBook) Confirmed(equipment, state string) bool {
 	}
 	ack, ok := b.acknowledgements[equipment]
 	return ok && ack.State == state && ack.Matches(command)
+}
+
+// Pending reports commands that have been issued but not yet acknowledged by
+// the equipment — operations awaiting confirmation at handover time.
+func (b *CommandBook) Pending() []PendingCommand {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]PendingCommand, 0)
+	for equipment, command := range b.active {
+		ack, acknowledged := b.acknowledgements[equipment]
+		if acknowledged && ack.Matches(command) {
+			continue
+		}
+		out = append(out, PendingCommand{Equipment: equipment, Action: command.Action, Command: command})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Equipment < out[j].Equipment })
+	return out
 }
 
 func (b *CommandBook) Close(ctx context.Context, state *State, campaign model.Campaign) error {

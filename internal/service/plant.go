@@ -52,6 +52,7 @@ type Plant struct {
 	Evidence          *analyzer.EvidenceCatalog
 	ReliefHistory     *relief.History
 	Incidents         *Incidents
+	Handovers         *HandoverBook
 	started           bool
 	lastError         string
 }
@@ -90,6 +91,7 @@ func NewPlant(dataDir string) *Plant {
 		Evidence:          analyzer.NewEvidenceCatalog(),
 		ReliefHistory:     relief.NewHistory(),
 		Incidents:         NewIncidents(),
+		Handovers:         NewHandoverBook(),
 	}
 	plant.Reflux.Register("T-101", plant.RefluxState)
 	plant.Feed.Observe = plant.observeFeed
@@ -211,7 +213,7 @@ func (p *Plant) AcquireReflux(owner string, amount float64) (model.Lease, error)
 	current := p.Campaign.Snapshot()
 	lease, err := p.Reflux.Acquire(owner, amount, current.Fencing)
 	if err != nil {
-		p.Incidents.Open("reflux-capacity", err.Error(), current.Revision.String())
+		p.openIncident("reflux-capacity", err.Error(), current.Revision.String())
 		return model.Lease{}, err
 	}
 	p.Leases.Put(lease)
@@ -232,7 +234,7 @@ func (p *Plant) Shutdown(ctx context.Context, reliefTimeout bool) (relief.Shutdo
 	result := relief.CombineShutdown(reliefErr, steamErr, p.Relief.State.Snapshot(), p.Reboiler.ClosureConfirmed(current.Epoch))
 	p.ReliefHistory.Record(p.Relief.State.Snapshot(), reliefErr)
 	if err := result.Error(); err != nil {
-		p.Incidents.Open("shutdown", err.Error(), current.Revision.String())
+		p.openIncident("shutdown", err.Error(), current.Revision.String())
 		p.fail(err)
 		return result, err
 	}
@@ -296,7 +298,11 @@ func (p *Plant) record(kind, payload string) error {
 	if err := p.FileLog.Append(event); err != nil {
 		return err
 	}
-	return p.Save()
+	if err := p.Save(); err != nil {
+		return err
+	}
+	p.noteHandoverFollowup(kind, payload)
+	return nil
 }
 
 func (p *Plant) observeFeed(value feed.Transition) {
@@ -313,5 +319,5 @@ func (p *Plant) fail(err error) {
 	p.mu.Lock()
 	p.lastError = err.Error()
 	p.mu.Unlock()
-	p.Incidents.Open("runtime", err.Error(), p.Campaign.Snapshot().Revision.String())
+	p.openIncident("runtime", err.Error(), p.Campaign.Snapshot().Revision.String())
 }
