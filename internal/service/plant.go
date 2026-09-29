@@ -52,6 +52,7 @@ type Plant struct {
 	Evidence          *analyzer.EvidenceCatalog
 	ReliefHistory     *relief.History
 	Incidents         *Incidents
+	Handovers         *HandoverBook
 	started           bool
 	lastError         string
 }
@@ -90,6 +91,7 @@ func NewPlant(dataDir string) *Plant {
 		Evidence:          analyzer.NewEvidenceCatalog(),
 		ReliefHistory:     relief.NewHistory(),
 		Incidents:         NewIncidents(),
+		Handovers:         NewHandoverBook(),
 	}
 	plant.Reflux.Register("T-101", plant.RefluxState)
 	plant.Feed.Observe = plant.observeFeed
@@ -293,6 +295,8 @@ func (p *Plant) record(kind, payload string) error {
 	if err := p.Journal.Append(event); err != nil {
 		return err
 	}
+	// 已签收交接单冻结的是交接时点；新事件只作为后续事件单独追加，不改已签收内容。
+	p.Handovers.NoteEvent(len(p.Journal.Events())-1, event)
 	if err := p.FileLog.Append(event); err != nil {
 		return err
 	}

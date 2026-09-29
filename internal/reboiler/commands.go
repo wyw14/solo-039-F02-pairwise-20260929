@@ -53,6 +53,21 @@ func (b *CommandBook) Confirmed(equipment, state string) bool {
 	return ok && ack.State == state && ack.Matches(command)
 }
 
+// Pending 返回仍待现场确认的命令：没有签收，或签收已属于更早的命令代次。
+func (b *CommandBook) Pending() []model.Command {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]model.Command, 0)
+	for _, command := range b.active {
+		ack, ok := b.acknowledgements[command.Equipment]
+		if ok && ack.Matches(command) {
+			continue
+		}
+		out = append(out, command)
+	}
+	return out
+}
+
 func (b *CommandBook) Close(ctx context.Context, state *State, campaign model.Campaign) error {
 	command, err := b.Issue(campaign, "steam-valve", "close", 0)
 	if err != nil {

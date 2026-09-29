@@ -23,6 +23,17 @@ func New() *State {
 
 func (s *State) SetOnline(value bool) { s.mu.Lock(); s.online = value; s.mu.Unlock() }
 
+func (s *State) Online() bool { s.mu.RLock(); defer s.mu.RUnlock(); return s.online }
+
+// ProofReady 表示当前窗口样本已凑齐，可以出具合格的成分证据。
+func (s *State) ProofReady() bool {
+	s.mu.RLock()
+	online := s.online
+	window := s.window
+	s.mu.RUnlock()
+	return online && window.Complete()
+}
+
 func (s *State) Calibrate() uuid.UUID {
 	s.mu.Lock()
 	s.calibration = uuid.New()
